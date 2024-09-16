@@ -23,6 +23,8 @@ enable_angelic: bool = False
 # whether to do perfect angelic debugging
 enable_perfect_angelic: bool = False
 
+# whether to perform reproducer
+enable_reproducer: bool = True
 
 # A special mode to only save SBFL result and exit
 only_save_sbfl_result: bool = False

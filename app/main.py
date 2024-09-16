@@ -1,7 +1,3 @@
-"""
-The main driver.
-"""
-
 import json
 import shutil
 from argparse import ArgumentParser
@@ -28,6 +24,9 @@ from app.post_process import (
 from app.raw_tasks import RawGithubTask, RawLocalTask, RawSweTask, RawTask
 from app.task import Task
 
+from app.reproduce import generate_test_code, run_test_code
+import traceback
+
 
 def get_args(
     from_command_line_str: str = None, subparser_dest_attr_name: str = "command"
@@ -44,6 +43,14 @@ def get_args(
         "github-issue", help="Run an online github issue"
     )
     set_github_parser_args(github_parser)
+
+    '''
+    reproducer
+    '''
+    reproducer_paser = subparsers.add_parser(
+        "reproduce-tasks", help="Reproduce tasks"
+    )
+    set_reproducer_parser_args(reproducer_paser)
 
     local_parser = subparsers.add_parser("local-issue", help="Run a local issue.")
     set_local_parser_args(local_parser)
@@ -91,6 +98,7 @@ def main(args, subparser_dest_attr_name: str = "command"):
     globals.only_save_sbfl_result = args.save_sbfl_result
     globals.disable_patch_generation = args.output_fix_locs
     globals.context_generation_limit = args.output_fix_limit
+    globals.enable_reproducer = args.enable_reproducer
 
     subcommand = getattr(args, subparser_dest_attr_name)
     if subcommand == "swe-bench":
@@ -124,6 +132,13 @@ def main(args, subparser_dest_attr_name: str = "command"):
         extract_organize_and_form_input(args.experiment_dir)
     elif subcommand == "re-extract-patches":
         reextract_organize_and_form_inputs(args.experiment_dir)
+    elif subcommand == "reproduce-tasks":
+        # reproduce tasks
+        tasks = make_swe_tasks(
+            args.task, args.task_list_file, args.setup_map, args.tasks_map
+        )
+        groups = group_swe_tasks_by_env(tasks)
+        reproduce_tasks(groups, num_processes)
 
 
 def set_swe_parser_args(parser: ArgumentParser) -> None:
@@ -166,6 +181,28 @@ def set_github_parser_args(parser: ArgumentParser) -> None:
         type=str,
         help="The directory where repositories should be cloned to.",
     )
+
+def set_reproducer_parser_args(parser: ArgumentParser) -> None:
+    add_task_related_args(parser)
+    parser.add_argument(
+        "--setup-map",
+        type=str,
+        required=True,
+        help="Path to json file that contains the setup information of the projects."
+    )
+    parser.add_argument(
+        "--tasks-map",
+        type=str,
+        required=True,
+        help="Path to json file that contains the tasks information."
+    )
+    parser.add_argument(
+        "--task-list-file",
+        type=str,
+        help="Path to the file that contains all tasks ids to be run."
+    )
+    parser.add_argument("--task", type=str, help="Task id to be run.")
+
 
 
 def set_local_parser_args(parser: ArgumentParser) -> None:
@@ -224,6 +261,12 @@ def add_task_related_args(parser: ArgumentParser) -> None:
         action="store_true",
         default=True,
         help="Enable layered code search.",
+    )
+    parser.add_argument(
+        "--enable-reproducer",
+        action="store_true",
+        default=True,
+        help="Enable reproducer.",
     )
     parser.add_argument(
         "--enable-sbfl", action="store_true", default=False, help="Enable SBFL."
@@ -455,8 +498,12 @@ def run_raw_task(
 
     run_ok = False
 
+    # get reproducer
+    code = generate_test_code(task)
+    reproducer_res = run_test_code(code)
+
     try:
-        run_ok = do_inference(task.to_task(), task_output_dir, print_callback)
+        run_ok = do_inference(task.to_task(), task_output_dir, print_callback, reproducer_res)
 
         if run_ok:
             run_status_message = f"Task {task_id} completed successfully."
@@ -500,6 +547,7 @@ def do_inference(
     python_task: Task,
     task_output_dir: str,
     print_callback: Callable[[dict], None] | None = None,
+    reproducer_res: str | None = None
 ) -> bool:
 
     apputils.create_dir_if_not_exists(task_output_dir)
@@ -526,6 +574,7 @@ def do_inference(
                 api_manager,
                 python_task.get_issue_statement(),
                 print_callback,
+                reproducer_res,
             )
 
             api_manager.dump_tool_call_sequence_to_file()
@@ -553,9 +602,80 @@ def dump_cost(start_time: datetime, end_time: datetime, task_output_dir: str):
     with open(pjoin(task_output_dir, "cost.json"), "w") as f:
         json.dump(stats, f, indent=4)
 
+def get_traceback_from_task(task: RawTask) -> str:
+    """
+    Execute the test code for the provided task and return the traceback if an exception occurs.
+    """
+    try:
+        code = generate_test_code(task)
+        run_test_code(code)
+        return None  # Return empty string if no exception occurs
+    except Exception as e:
+        # Capture and return the traceback as a string
+        return traceback.format_exc()
+    
+def reproduce_tasks(
+    task_groups: Mapping[str, Sequence[RawTask]],
+    num_processes: int
+) -> None:
+    """
+    Reproduce tasks using GPT-4 for code generation and execution.
+    """
+    all_tasks = list(chain.from_iterable(task_groups.values()))
+    num_tasks = len(all_tasks)
+
+    log.print_with_time(f"Total number of reproduction tasks: {num_tasks}")
+    log.print_with_time(f"Total number of processes: {num_processes}")
+    log.print_with_time(f"Task group info: (number of groups: {len(task_groups)})")
+    for key, tasks in task_groups.items():
+        log.print_with_time(f"\t{key}: {len(tasks)} tasks")
+
+    # Reproduce tasks serially or in parallel based on num_processes
+    if num_processes == 1:
+        log.print_with_time("Running in single process mode.")
+        reproduce_tasks_serial(all_tasks)
+        log.print_with_time("Finished reproducing all tasks sequentially.")
+    else:
+        reproduce_tasks_parallel(task_groups, num_processes)
+
+    # post-process completed experiments to get input file to SWE-bench
+    log.print_with_time("Reproduce task completed experiment results.")
+    swe_input_file = organize_and_form_input(globals.output_dir)
+    log.print_with_time(f"Reproduce input file created: {swe_input_file}")
+
+
+def reproduce_tasks_serial(tasks: list[RawTask]) -> None:
+    """
+    Reproduce tasks in serial mode.
+    """
+    for task in tasks:
+        try:
+            code = generate_test_code(task)
+            run_test_code(code)
+        except Exception as e:
+            task_info = getattr(task, 'id', 'unknown_id')  # Use a default if 'id' does not exist
+            log.print_with_time(f"Error reproducing task {task_info}: {e}")
+            log.print_with_time("Traceback:")
+            log.print_with_time(traceback.format_exc())
+
+def reproduce_tasks_parallel(task_groups: Mapping[str, Sequence[RawTask]], num_processes: int) -> None:
+    """
+    Reproduce tasks in parallel mode.
+    """
+    with ProcessPoolExecutor(max_workers=num_processes) as executor:
+        futures = [executor.submit(process_task, task) for task in chain.from_iterable(task_groups.values())]
+        for future in futures:
+            try:
+                future.result()  # Ensure any exceptions are raised
+            except Exception as e:
+                log.print_with_time(f"Error reproducing task: {e}")
+                log.print_with_time("Traceback:")
+                log.print_with_time(traceback.format_exc())
+
 
 if __name__ == "__main__":
     logger.remove()
     register_all_models()
     args = get_args()
     main(args)
+
