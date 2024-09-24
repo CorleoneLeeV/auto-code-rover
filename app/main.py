@@ -11,6 +11,7 @@ from datetime import datetime
 from itertools import chain
 from os.path import abspath
 from os.path import join as pjoin
+from typing import Literal
 
 from loguru import logger
 
@@ -27,6 +28,7 @@ from app.post_process import (
 )
 from app.raw_tasks import RawGithubTask, RawLocalTask, RawSweTask, RawTask
 from app.task import Task
+from app import aci_test
 
 
 def get_args(
@@ -39,6 +41,11 @@ def get_args(
         "swe-bench", help="Run one or multiple swe-bench tasks"
     )
     set_swe_parser_args(swe_parser)
+    
+    swe_parser_test_aci_only = subparsers.add_parser(
+        "test-aci-only", help="Test ACI with one or multiple swe-bench tasks"
+    )
+    set_swe_parser_args(swe_parser_test_aci_only)
 
     github_parser = subparsers.add_parser(
         "github-issue", help="Run an online github issue"
@@ -100,6 +107,13 @@ def main(args, subparser_dest_attr_name: str = "command"):
 
         groups = group_swe_tasks_by_env(tasks)
         run_task_groups(groups, num_processes, organize_output=True)
+    elif subcommand == "test-aci-only":
+        tasks = make_swe_tasks(
+            args.task, args.task_list_file, args.setup_map, args.tasks_map
+        )
+
+        groups = group_swe_tasks_by_env(tasks)
+        run_task_groups(groups, num_processes, organize_output=True, mode='test-aci-only')
     elif subcommand == "github-issue":
         setup_dir = args.setup_dir
         if setup_dir is not None:
@@ -341,11 +355,13 @@ def group_swe_tasks_by_env(tasks: list[RawSweTask]) -> dict[str, list[RawSweTask
         groups[key].append(task)
     return groups
 
+TaskRunMode = Literal[None, 'test-aci-only']
 
 def run_task_groups(
     task_groups: Mapping[str, Sequence[RawTask]],
     num_processes: int,
     organize_output: bool = False,
+    mode: TaskRunMode = None,
 ):
     """
     Main entry for running tasks.
@@ -362,28 +378,33 @@ def run_task_groups(
     for key, tasks in task_groups.items():
         log.print_with_time(f"\t{key}: {len(tasks)} tasks")
 
-    # single process mode
-    if num_processes == 1:
-        log.print_with_time("Running in single process mode.")
-        run_tasks_serial(all_tasks)
+    if mode == 'test-aci-only':
+        log.print_with_time("Running ACI test in single process mode.")
+        run_tasks_serial(all_tasks, mode=mode)
         log.print_with_time("Finished all tasks sequentially.")
     else:
-        run_task_groups_parallel(task_groups, num_processes)
+        # single process mode
+        if num_processes == 1:
+            log.print_with_time("Running in single process mode.")
+            run_tasks_serial(all_tasks)
+            log.print_with_time("Finished all tasks sequentially.")
+        else:
+            run_task_groups_parallel(task_groups, num_processes)
 
-    if globals.only_save_sbfl_result:
-        log.print_with_time("Only saving SBFL results. Exiting.")
-        return
+        if globals.only_save_sbfl_result:
+            log.print_with_time("Only saving SBFL results. Exiting.")
+            return
 
-    if organize_output:
-        # post-process completed experiments to get input file to SWE-bench
-        log.print_with_time("Post-processing completed experiment results.")
-        swe_input_file = organize_and_form_input(globals.output_dir)
-        log.print_with_time(f"SWE-Bench input file created: {swe_input_file}")
+        if organize_output:
+            # post-process completed experiments to get input file to SWE-bench
+            log.print_with_time("Post-processing completed experiment results.")
+            swe_input_file = organize_and_form_input(globals.output_dir)
+            log.print_with_time(f"SWE-Bench input file created: {swe_input_file}")
 
 
-def run_tasks_serial(tasks: list[RawTask]) -> None:
+def run_tasks_serial(tasks: list[RawTask], mode: TaskRunMode = None) -> None:
     for task in tasks:
-        run_task_in_subprocess(task)
+        run_task_in_subprocess(task, mode=mode)
 
 
 def run_task_groups_parallel(
@@ -426,13 +447,14 @@ def run_task_group(task_group_id: str, task_group_items: list[RawTask]) -> None:
     )
 
 
-def run_task_in_subprocess(task: RawTask) -> None:
+def run_task_in_subprocess(task: RawTask, mode: TaskRunMode = None) -> None:
     with ProcessPoolExecutor(max_workers=1) as executor:
-        executor.submit(run_raw_task, task)
+        executor.submit(run_raw_task, task, mode=mode)
 
 
 def run_raw_task(
-    task: RawTask, print_callback: Callable[[dict], None] | None = None
+    task: RawTask, print_callback: Callable[[dict], None] | None = None,
+    mode: TaskRunMode = None
 ) -> bool:
     """
     High-level entry for running one task.
@@ -444,7 +466,7 @@ def run_raw_task(
         Whether the task completed successfully.
     """
     task_id = task.task_id
-
+    
     start_time_s = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     task_output_dir = pjoin(globals.output_dir, f"{task_id}_{start_time_s}")
     apputils.create_dir_if_not_exists(task_output_dir)
@@ -452,6 +474,10 @@ def run_raw_task(
     task.dump_meta_data(task_output_dir)
 
     log.log_and_always_print(f"============= Running task {task_id} =============")
+
+    if mode == 'test-aci-only':
+        aci_test.aci_test(task.to_task(), task_output_dir)
+        return True
 
     run_ok = False
 

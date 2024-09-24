@@ -13,6 +13,7 @@ from app import log
 from app.analysis import sbfl
 from app.analysis.sbfl import NoCoverageData
 from app.api import agent_proxy, agent_write_locations, agent_write_patch
+from app.api.reproduction_aci import ReproductionACI
 from app.data_structures import FunctionCallIntent, MessageThread
 from app.log import log_exception
 from app.search.search_manage import SearchManager
@@ -25,6 +26,7 @@ class ProjectApiManager:
     ################# State machine specific ################
     # NOTE: this section is for state machine; APIs in stratified mode are specified
     # in agent_api_selector.py
+    # extra-NOTE: but also need to be specified here.
     api_functions = [
         "search_class",
         "search_class_in_file",
@@ -33,6 +35,7 @@ class ProjectApiManager:
         "search_method_in_file",
         "search_code",
         "search_code_in_file",
+        "test_action",
         "write_patch",
     ]
 
@@ -79,6 +82,9 @@ class ProjectApiManager:
 
         # build search manager
         self.search_manager = SearchManager(self.task.project_path)
+        
+        # reproduction aci
+        self.reproduction_aci = ReproductionACI(self.task.project_path, self.search_manager)
 
         # keeps track which tools is currently being used
         self.curr_tool: str | None = None
@@ -431,6 +437,10 @@ class ProjectApiManager:
             The method code that contains the searched code string.
         """
         return self.search_manager.search_code_in_file(code_str, file_name)
+
+    def test_action(self) -> tuple[str, str, bool]:
+        response = self.reproduction_aci.test_action()
+        return response, response, True
 
     def write_patch(
         self,

@@ -1,0 +1,2 @@
+Run the ACI test only:
+PYTHONPATH=. python app/main.py test-aci-only --model gpt-4o-2024-05-13 --setup-map ../SWE-bench/setup_result/setup_map.json --tasks-map ../SWE-bench/setup_result/tasks_map.json --output-dir output --task django__django-11133
