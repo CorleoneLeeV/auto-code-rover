@@ -15,7 +15,7 @@ output_dir: str = ""
 load_cache: Optional[str] = None
 
 # the model to use
-model: str = "gpt-3.5-turbo-0125"
+model: str = "gpt-4o-2024-05-13"
 
 # the model temperature to use
 # For OpenAI models: this value should be from 0 to 2
@@ -28,7 +28,7 @@ conv_round_limit: int = 15
 enable_sbfl: bool = False
 
 # whether to perform layered search
-enable_layered: bool = False
+enable_layered: bool = True
 
 # whether to perform our own validation
 enable_validation: bool = False
@@ -38,6 +38,9 @@ enable_angelic: bool = False
 
 # whether to do perfect angelic debugging
 enable_perfect_angelic: bool = False
+
+# whether to perform reproducer
+enable_reproducer: bool = True
 
 # perform installation of dependencies for each task to save time
 # This should be figured out automatically depending on the value of other options
@@ -52,6 +55,7 @@ test_exec_timeout: int = 300
 ### Some information about the allowed models
 
 MODEL_NOTES = {
+    "gpt-4o-2024-05-13":"Turbo. Up to May 2024.0",
     "gpt-4-0125-preview": "Turbo. Up to Dec 2023.",
     "gpt-4-1106-preview": "Turbo. Up to Apr 2023.",
     "gpt-3.5-turbo-0125": "Turbo. Up to Sep 2021.",
@@ -65,6 +69,7 @@ MODELS = list(MODEL_NOTES.keys())
 
 # The cost per token for each model input.
 MODEL_COST_PER_INPUT = {
+    "gpt-4o-2024-05-13":0.000005,
     "gpt-4-0125-preview": 0.00001,
     "gpt-4-1106-preview": 0.00001,
     "gpt-3.5-turbo-0125": 0.0000005,  # cheapest!
@@ -76,6 +81,7 @@ MODEL_COST_PER_INPUT = {
 
 # The cost per token for each model output.
 MODEL_COST_PER_OUTPUT = {
+    "gpt-4o-2024-05-13":0.000015,
     "gpt-4-0125-preview": 0.00003,
     "gpt-4-1106-preview": 0.00003,
     "gpt-3.5-turbo-0125": 0.0000015,
@@ -87,8 +93,10 @@ MODEL_COST_PER_OUTPUT = {
 
 # models that support the new parallel tool call feature
 PARALLEL_TOOL_CALL_MODELS = [
+    "gpt-4o-2024-05-13",
     "gpt-4-0125-preview",
     "gpt-4-1106-preview",
     "gpt-3.5-turbo-0125",
     "gpt-3.5-turbo-1106",
 ]
+

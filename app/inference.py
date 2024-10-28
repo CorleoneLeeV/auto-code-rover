@@ -383,7 +383,7 @@ def start_conversation_round_state_machine(
 
 
 def run_one_task(
-    output_dir: str, api_manager: ProjectApiManager, problem_stmt: str
+    output_dir: str, api_manager: ProjectApiManager, problem_stmt: str, reproducer_res: str | None = None,
 ) -> bool:
     """
     Main entry point to run inference on one task.
@@ -412,6 +412,12 @@ def run_one_task(
         localization_prompt += "The tool output is as follows:\n"
         localization_prompt += localization_result
         msg_thread.add_user(localization_prompt)
+
+    if globals.enable_reproducer:
+        if reproducer_res:
+            reproducer_prompt = "A reproducer tool has been provided for the issue. You can use the traceback below to assist in debugging:"
+            reproducer_prompt += "\n" + reproducer_res
+            msg_thread.add_user(reproducer_prompt)
 
     if globals.enable_layered:
         return start_conversation_round_stratified(output_dir, msg_thread, api_manager)

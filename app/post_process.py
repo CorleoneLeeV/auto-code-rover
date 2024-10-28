@@ -365,6 +365,9 @@ def extract_swe_bench_input(dir: str):
     # only look into applicable_patch dir, since we have already done
     # the categorization
     applicable_res_dir = pjoin(dir, "applicable_patch")
+    print("dir:")
+    print(dir)
+
     # figure out what tasks have applicable patch
     task_dirs = [
         x
