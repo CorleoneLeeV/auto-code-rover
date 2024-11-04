@@ -1,3 +1,5 @@
+> **⚠️ This is the code from the FAILED EXPERIMENT which broke the environment. DO NOT run it directly in your experiment environment without fixing that issue first.**
+
 # AutoCodeRover: Autonomous Program Improvement
 
 ![overall-workflow](https://github.com/nus-apr/auto-code-rover/assets/48704330/0b8da9ad-588c-4f7d-9c99-53f33d723d35)
