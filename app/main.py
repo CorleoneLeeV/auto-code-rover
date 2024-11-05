@@ -148,6 +148,7 @@ def run_one_task(task: Task) -> bool:
         return True
 
     # get reproducer result
+    reproducer_res = None
     if globals.enable_reproducer:
         code = generate_test_code(task)
         reproducer_res = run_test_code(code)

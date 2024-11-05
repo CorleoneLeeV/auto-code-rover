@@ -40,7 +40,7 @@ enable_angelic: bool = False
 enable_perfect_angelic: bool = False
 
 # whether to perform reproducer
-enable_reproducer: bool = True
+enable_reproducer: bool = False
 
 # perform installation of dependencies for each task to save time
 # This should be figured out automatically depending on the value of other options

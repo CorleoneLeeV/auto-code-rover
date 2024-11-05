@@ -1,4 +1,4 @@
-> **⚠️ This is the code from the FAILED EXPERIMENT which broke the environment. DO NOT run it directly in your experiment environment without fixing that issue first.**
+> **⚠️ This is the code from the FAILED EXPERIMENT which broke the environment. For safety, the `enable_reproducer` is currently set to false.**
 
 # AutoCodeRover: Autonomous Program Improvement
 
